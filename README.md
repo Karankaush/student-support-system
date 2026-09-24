@@ -112,3 +112,50 @@ Staff members can manage tickets.
 ```bash
 cd backend
 uvicorn app.main:app --reload
+
+cd frontend
+npm run dev
+
+
+Backend:
+
+http://127.0.0.1:8000
+
+Frontend:
+
+http://localhost:3000
+
+API documentation:
+
+http://127.0.0.1:8000/docs
+
+Staff Test Account
+
+Email:
+
+staff@college.com
+
+Password:
+
+staff123
+
+Trade-offs
+
+The implementation intentionally keeps the system simple and focused on the assignment requirements.
+
+The frontend uses direct REST API calls instead of adding a state-management library.
+
+Ticket ageing is calculated dynamically rather than stored as a database field.
+
+Staff assignment is kept simple through the authenticated staff user's identity.
+
+Future Improvements
+
+Possible production improvements include:
+
+Pagination for large ticket volumes
+Email notifications
+More granular permissions
+Background SLA escalation jobs
+Audit logging improvements
+Automated API and frontend test coverage
