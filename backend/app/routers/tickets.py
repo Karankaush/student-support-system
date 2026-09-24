@@ -7,14 +7,17 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_staff
+from app.models.activity import TicketActivity
 from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User
 from app.schemas.ticket import (
+    ActivityResponse,
     TicketAssign,
     TicketCreate,
     TicketResponse,
     TicketUpdate,
 )
+
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -24,6 +27,21 @@ SLA_HOURS = {
     TicketPriority.MEDIUM: 48,
     TicketPriority.HIGH: 24,
 }
+
+
+def add_activity(
+    db: Session,
+    ticket_id: int,
+    user_id: int,
+    action: str,
+):
+    activity = TicketActivity(
+        ticket_id=ticket_id,
+        user_id=user_id,
+        action=action,
+    )
+
+    db.add(activity)
 
 
 @router.post(
@@ -49,14 +67,19 @@ def create_ticket(
     )
 
     db.add(ticket)
+    db.flush()
+
+    add_activity(
+        db,
+        ticket.id,
+        current_user.id,
+        "Ticket created",
+    )
+
     db.commit()
     db.refresh(ticket)
 
     return ticket
-
-
-
-
 
 
 @router.get("", response_model=list[TicketResponse])
@@ -71,7 +94,9 @@ def list_tickets(
     else:
         stmt = select(Ticket)
 
-    return db.scalars(stmt.order_by(Ticket.created_at.desc())).all()
+    return db.scalars(
+        stmt.order_by(Ticket.created_at.desc())
+    ).all()
 
 
 @router.get("/{ticket_id}", response_model=TicketResponse)
@@ -98,8 +123,6 @@ def get_ticket(
         )
 
     return ticket
-
-
 
 
 @router.patch(
@@ -133,12 +156,17 @@ def assign_ticket(
     if ticket.status == TicketStatus.OPEN:
         ticket.status = TicketStatus.IN_PROGRESS
 
+    add_activity(
+        db,
+        ticket.id,
+        current_user.id,
+        f"Ticket assigned to staff #{staff.id}",
+    )
+
     db.commit()
     db.refresh(ticket)
 
     return ticket
-
-
 
 
 @router.patch(
@@ -162,14 +190,35 @@ def update_ticket(
     if data.status is not None:
         ticket.status = data.status
 
+        add_activity(
+            db,
+            ticket.id,
+            current_user.id,
+            f"Status changed to {data.status.value}",
+        )
+
         if data.status == TicketStatus.RESOLVED:
             ticket.resolved_at = datetime.now(timezone.utc)
 
     if data.priority is not None:
         ticket.priority = data.priority
 
+        add_activity(
+            db,
+            ticket.id,
+            current_user.id,
+            f"Priority changed to {data.priority.value}",
+        )
+
     if data.resolution is not None:
         ticket.resolution = data.resolution
+
+        add_activity(
+            db,
+            ticket.id,
+            current_user.id,
+            "Resolution added",
+        )
 
     ticket.updated_at = datetime.now(timezone.utc)
 
@@ -177,3 +226,38 @@ def update_ticket(
     db.refresh(ticket)
 
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/activities",
+    response_model=list[ActivityResponse],
+)
+def get_ticket_activities(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Ticket, ticket_id)
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found",
+        )
+
+    if (
+        current_user.role.value == "student"
+        and ticket.student_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only access your own ticket history",
+        )
+
+    stmt = (
+        select(TicketActivity)
+        .where(TicketActivity.ticket_id == ticket_id)
+        .order_by(TicketActivity.created_at.asc())
+    )
+
+    return db.scalars(stmt).all()
