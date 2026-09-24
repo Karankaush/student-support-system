@@ -84,6 +84,8 @@ def create_ticket(
 
 @router.get("", response_model=list[TicketResponse])
 def list_tickets(
+    status_filter: TicketStatus | None = None,
+    priority: TicketPriority | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -94,9 +96,45 @@ def list_tickets(
     else:
         stmt = select(Ticket)
 
-    return db.scalars(
-        stmt.order_by(Ticket.created_at.desc())
-    ).all()
+    if status_filter is not None:
+        stmt = stmt.where(Ticket.status == status_filter)
+
+    if priority is not None:
+        stmt = stmt.where(Ticket.priority == priority)
+
+    stmt = stmt.order_by(Ticket.created_at.desc())
+
+    return db.scalars(stmt).all()
+
+
+
+@router.get("/summary")
+def ticket_summary(
+    current_user: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+):
+    tickets = db.scalars(select(Ticket)).all()
+
+    return {
+        "total": len(tickets),
+        "open": sum(t.status == TicketStatus.OPEN for t in tickets),
+        "in_progress": sum(
+            t.status == TicketStatus.IN_PROGRESS
+            for t in tickets
+        ),
+        "pending": sum(
+            t.status == TicketStatus.PENDING
+            for t in tickets
+        ),
+        "resolved": sum(
+            t.status == TicketStatus.RESOLVED
+            for t in tickets
+        ),
+        "closed": sum(
+            t.status == TicketStatus.CLOSED
+            for t in tickets
+        ),
+    }
 
 
 @router.get("/{ticket_id}", response_model=TicketResponse)
