@@ -53,3 +53,127 @@ def create_ticket(
     db.refresh(ticket)
 
     return ticket
+
+
+
+
+
+
+@router.get("", response_model=list[TicketResponse])
+def list_tickets(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role.value == "student":
+        stmt = select(Ticket).where(
+            Ticket.student_id == current_user.id
+        )
+    else:
+        stmt = select(Ticket)
+
+    return db.scalars(stmt.order_by(Ticket.created_at.desc())).all()
+
+
+@router.get("/{ticket_id}", response_model=TicketResponse)
+def get_ticket(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Ticket, ticket_id)
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found",
+        )
+
+    if (
+        current_user.role.value == "student"
+        and ticket.student_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only access your own tickets",
+        )
+
+    return ticket
+
+
+
+
+@router.patch(
+    "/{ticket_id}/assign",
+    response_model=TicketResponse,
+)
+def assign_ticket(
+    ticket_id: int,
+    data: TicketAssign,
+    current_user: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Ticket, ticket_id)
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found",
+        )
+
+    staff = db.get(User, data.staff_id)
+
+    if not staff or staff.role.value != "staff":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid staff member",
+        )
+
+    ticket.assigned_to = staff.id
+
+    if ticket.status == TicketStatus.OPEN:
+        ticket.status = TicketStatus.IN_PROGRESS
+
+    db.commit()
+    db.refresh(ticket)
+
+    return ticket
+
+
+
+
+@router.patch(
+    "/{ticket_id}",
+    response_model=TicketResponse,
+)
+def update_ticket(
+    ticket_id: int,
+    data: TicketUpdate,
+    current_user: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Ticket, ticket_id)
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found",
+        )
+
+    if data.status is not None:
+        ticket.status = data.status
+
+        if data.status == TicketStatus.RESOLVED:
+            ticket.resolved_at = datetime.now(timezone.utc)
+
+    if data.priority is not None:
+        ticket.priority = data.priority
+
+    if data.resolution is not None:
+        ticket.resolution = data.resolution
+
+    ticket.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(ticket)
+
+    return ticket
