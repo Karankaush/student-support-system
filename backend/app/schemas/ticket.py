@@ -30,6 +30,7 @@ class TicketResponse(BaseModel):
     id: int
     student_id: int
     assigned_to: int | None
+    ageing_hours: float
 
     title: str
     description: str

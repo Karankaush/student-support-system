@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import (
@@ -97,6 +97,35 @@ class Ticket(Base):
         Text,
         nullable=True,
     )
+
+
+    @property
+    def ageing_hours(self):
+        if not self.created_at:
+            return 0
+
+        now = datetime.now(timezone.utc)
+
+        created = self.created_at
+
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+
+        return round(
+            (now - created).total_seconds() / 3600,
+            2,
+        )
+
+    student = relationship(
+        "User",
+        foreign_keys=[student_id],
+        back_populates="tickets",
+    )
+
+
+
+
+
 
     student = relationship(
         "User",
