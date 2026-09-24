@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.routers.auth import router as auth_router
 from app.db.database import Base, engine
+from app.routers.tickets import router as ticket_router
 from app.models import User, Ticket, TicketActivity
 
 
@@ -9,6 +10,7 @@ app = FastAPI(
     version="1.0.0",
 )
 app.include_router(auth_router)
+app.include_router(ticket_router)
 
 
 @app.get("/")
